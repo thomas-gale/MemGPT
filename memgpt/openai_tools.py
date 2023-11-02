@@ -58,7 +58,20 @@ def retry_with_exponential_backoff(
 
 @retry_with_exponential_backoff
 def completions_with_backoff(**kwargs):
-    return openai.ChatCompletion.create(**kwargs)
+    # Local model
+    if HOST_TYPE is not None:
+        return get_chat_completion(**kwargs)
+
+    # OpenAI / Azure model
+    else:
+        if using_azure():
+            azure_openai_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
+            if azure_openai_deployment is not None:
+                kwargs["deployment_id"] = azure_openai_deployment
+            else:
+                kwargs["engine"] = MODEL_TO_AZURE_ENGINE[kwargs["model"]]
+                kwargs.pop("model")
+        return openai.ChatCompletion.create(**kwargs)
 
 
 def aretry_with_exponential_backoff(
@@ -108,7 +121,7 @@ def aretry_with_exponential_backoff(
 async def acompletions_with_backoff(**kwargs):
     # Local model
     if HOST_TYPE is not None:
-        return await get_chat_completion(**kwargs)
+        return get_chat_completion(**kwargs)
 
     # OpenAI / Azure model
     else:
@@ -144,6 +157,25 @@ async def async_get_embedding_with_backoff(text, model="text-embedding-ada-002")
     return embedding
 
 
+@retry_with_exponential_backoff
+def create_embedding_with_backoff(**kwargs):
+    if using_azure():
+        azure_openai_deployment = os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT")
+        if azure_openai_deployment is not None:
+            kwargs["deployment_id"] = azure_openai_deployment
+        else:
+            kwargs["engine"] = kwargs["model"]
+            kwargs.pop("model")
+    return openai.Embedding.create(**kwargs)
+
+
+def get_embedding_with_backoff(text, model="text-embedding-ada-002"):
+    text = text.replace("\n", " ")
+    response = create_embedding_with_backoff(input=[text], model=model)
+    embedding = response["data"][0]["embedding"]
+    return embedding
+
+
 MODEL_TO_AZURE_ENGINE = {
     "gpt-4": "gpt-4",
     "gpt-4-32k": "gpt-4-32k",
@@ -160,8 +192,8 @@ def get_set_azure_env_vars():
         ("AZURE_OPENAI_VERSION", os.getenv("AZURE_OPENAI_VERSION")),
         ("AZURE_OPENAI_DEPLOYMENT", os.getenv("AZURE_OPENAI_DEPLOYMENT")),
         (
-            "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
-            os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
+            "AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT",
+            os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT"),
         ),
     ]
     return [x for x in azure_env_variables if x[1] is not None]
@@ -192,7 +224,7 @@ def configure_azure_support():
 
 def check_azure_embeddings():
     azure_openai_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    azure_openai_embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    azure_openai_embedding_deployment = os.getenv("AZURE_OPENAI_EMBEDDINGS_DEPLOYMENT")
     if azure_openai_deployment is not None and azure_openai_embedding_deployment is None:
         raise ValueError(
             f"Error: It looks like you are using Azure deployment ids and computing embeddings, make sure you are setting one for embeddings as well. Please see README section on Azure"

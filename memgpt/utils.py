@@ -14,6 +14,7 @@ import sqlite3
 import fitz
 from tqdm import tqdm
 import typer
+import memgpt
 from memgpt.openai_tools import async_get_embedding_with_backoff
 from memgpt.constants import MEMGPT_DIR
 from llama_index import set_global_service_context, ServiceContext, VectorStoreIndex, load_index_from_storage, StorageContext
@@ -137,13 +138,13 @@ def read_in_rows_csv(file_object, chunk_size):
 
 def prepare_archival_index_from_files(glob_pattern, tkns_per_chunk=300, model="gpt-4"):
     encoding = tiktoken.encoding_for_model(model)
-    files = glob.glob(glob_pattern)
+    files = glob.glob(glob_pattern, recursive=True)
     return chunk_files(files, tkns_per_chunk, model)
 
 
 def total_bytes(pattern):
     total = 0
-    for filename in glob.glob(pattern):
+    for filename in glob.glob(pattern, recursive=True):
         if os.path.isfile(filename):  # ensure it's a file and not a directory
             total += os.path.getsize(filename)
     return total
@@ -151,6 +152,10 @@ def total_bytes(pattern):
 
 def chunk_file(file, tkns_per_chunk=300, model="gpt-4"):
     encoding = tiktoken.encoding_for_model(model)
+
+    if file.endswith(".db"):
+        return  # can't read the sqlite db this way, will get handled in main.py
+
     with open(file, "r") as f:
         if file.endswith(".pdf"):
             lines = [l for l in read_pdf_in_chunks(file, tkns_per_chunk * 8)]
@@ -260,7 +265,7 @@ async def prepare_archival_index_from_files_compute_embeddings(
     model="gpt-4",
     embeddings_model="text-embedding-ada-002",
 ):
-    files = sorted(glob.glob(glob_pattern))
+    files = sorted(glob.glob(glob_pattern, recursive=True))
     save_dir = os.path.join(
         MEMGPT_DIR,
         "archival_index_from_files_" + get_local_time().replace(" ", "_").replace(":", "_"),
@@ -364,6 +369,11 @@ def get_index(name, docs):
     :param docs: Documents to be embedded
     :type docs: List[Document]
     """
+    from memgpt.config import MemGPTConfig  # avoid circular import
+    from memgpt.embeddings import embedding_model  # avoid circular import
+
+    # TODO: configure to work for local
+    print("Warning: get_index(docs) only supported for OpenAI")
 
     # check if directory exists
     dir = f"{MEMGPT_DIR}/archival/{name}"
@@ -387,8 +397,12 @@ def get_index(name, docs):
         typer.secho("Aborting.", fg="red")
         exit()
 
-    embed_model = OpenAIEmbedding()
-    service_context = ServiceContext.from_defaults(embed_model=embed_model, chunk_size=300)
+    # read embedding confirguration
+    # TODO: in the future, make an IngestData class that loads the config once
+    config = MemGPTConfig.load()
+    embed_model = embedding_model(config)
+    chunk_size = config.embedding_chunk_size
+    service_context = ServiceContext.from_defaults(embed_model=embed_model, chunk_size=chunk_size)
     set_global_service_context(service_context)
 
     # index documents
@@ -396,8 +410,21 @@ def get_index(name, docs):
     return index
 
 
+def save_agent_index(index, agent_config):
+    """Save agent index inside of ~/.memgpt/agents/<agent_name>
+
+    :param index: Index to save
+    :type index: VectorStoreIndex
+    :param agent_name: Name of agent that the archival memory belonds to
+    :type agent_name: str
+    """
+    dir = agent_config.save_agent_index_dir()
+    os.makedirs(dir, exist_ok=True)
+    index.storage_context.persist(dir)
+
+
 def save_index(index, name):
-    """Save index to a specificed name in ~/.memgpt
+    """Save index ~/.memgpt/archival/<name> to load into agents
 
     :param index: Index to save
     :type index: VectorStoreIndex
@@ -422,3 +449,58 @@ def save_index(index, name):
     os.makedirs(dir, exist_ok=True)
     index.storage_context.persist(dir)
     print(dir)
+
+
+def list_agent_config_files():
+    """List all agents config files"""
+    return os.listdir(os.path.join(MEMGPT_DIR, "agents"))
+
+
+def list_human_files():
+    """List all humans files"""
+    defaults_dir = os.path.join(memgpt.__path__[0], "humans", "examples")
+    user_dir = os.path.join(MEMGPT_DIR, "humans")
+
+    memgpt_defaults = os.listdir(defaults_dir)
+    memgpt_defaults = [os.path.join(defaults_dir, f) for f in memgpt_defaults if f.endswith(".txt")]
+
+    user_added = os.listdir(user_dir)
+    user_added = [os.path.join(user_dir, f) for f in user_added]
+    return memgpt_defaults + user_added
+
+
+def list_persona_files():
+    """List all personas files"""
+    defaults_dir = os.path.join(memgpt.__path__[0], "personas", "examples")
+    user_dir = os.path.join(MEMGPT_DIR, "personas")
+
+    memgpt_defaults = os.listdir(defaults_dir)
+    memgpt_defaults = [os.path.join(defaults_dir, f) for f in memgpt_defaults if f.endswith(".txt")]
+
+    user_added = os.listdir(user_dir)
+    user_added = [os.path.join(user_dir, f) for f in user_added]
+    return memgpt_defaults + user_added
+
+
+def get_human_text(name: str):
+    for file_path in list_human_files():
+        file = os.path.basename(file_path)
+        if f"{name}.txt" == file or name == file:
+            return open(file_path, "r").read().strip()
+    raise ValueError(f"Human {name} not found")
+
+
+def get_persona_text(name: str):
+    for file_path in list_persona_files():
+        file = os.path.basename(file_path)
+        if f"{name}.txt" == file or name == file:
+            return open(file_path, "r").read().strip()
+
+    raise ValueError(f"Persona {name} not found")
+
+
+def get_human_text(name: str):
+    for file_path in list_human_files():
+        file = os.path.basename(file_path)
+        if f"{name}.txt" == file or name == file:
+            return open(file_path, "r").read().strip()

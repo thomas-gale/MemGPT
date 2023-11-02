@@ -9,5 +9,7 @@ SIMPLE = {
         # '\n#',
         # '\n\n\n',
     ],
-    "truncation_length": 4096,  # assuming llama2 models
+    "max_new_tokens": 3072,
+    # "truncation_length": 4096,  # assuming llama2 models
+    "truncation_length": 8000,  # assuming mistral 7b
 }

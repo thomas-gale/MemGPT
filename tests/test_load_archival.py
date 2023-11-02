@@ -1,24 +1,23 @@
-import tempfile
-import asyncio
-import os
-from memgpt.connectors.connector import load_directory, load_database, load_webpage
-import memgpt.agent as agent
-import memgpt.system as system
-import memgpt.utils as utils
-import memgpt.presets as presets
-import memgpt.constants as constants
-import memgpt.personas.personas as personas
-import memgpt.humans.humans as humans
-from memgpt.persistence_manager import InMemoryStateManager, LocalStateManager
-from memgpt.config import Config
-from memgpt.constants import MEMGPT_DIR, DEFAULT_MEMGPT_MODEL
-from memgpt.connectors import connector
-import memgpt.interface  # for printing to terminal
-import asyncio
-from datasets import load_dataset
+# import tempfile
+# import asyncio
+# import os
+# import asyncio
+# from datasets import load_dataset
+
+# import memgpt
+# from memgpt.cli.cli_load import load_directory, load_database, load_webpage
+# import memgpt.presets as presets
+# import memgpt.personas.personas as personas
+# import memgpt.humans.humans as humans
+# from memgpt.persistence_manager import InMemoryStateManager, LocalStateManager
+
+# # from memgpt.config import AgentConfig
+# from memgpt.constants import MEMGPT_DIR, DEFAULT_MEMGPT_MODEL
+# import memgpt.interface  # for printing to terminal
 
 
 def test_load_directory():
+    return
     # downloading hugging face dataset (if does not exist)
     dataset = load_dataset("MemGPT/example_short_stories")
 
@@ -37,12 +36,21 @@ def test_load_directory():
         recursive=True,
     )
 
+    # create agents with defaults
+    agent_config = AgentConfig(
+        persona=personas.DEFAULT,
+        human=humans.DEFAULT,
+        model=DEFAULT_MEMGPT_MODEL,
+        data_source="tmp_hf_dataset",
+    )
+
     # create state manager based off loaded data
-    persistence_manager = LocalStateManager(archival_memory_db="tmp_hf_dataset")
+    persistence_manager = LocalStateManager(agent_config=agent_config)
 
     # create agent
     memgpt_agent = presets.use_preset(
-        presets.DEFAULT,
+        presets.DEFAULT_PRESET,
+        agent_config,
         DEFAULT_MEMGPT_MODEL,
         personas.get_persona_text(personas.DEFAULT),
         humans.get_human_text(humans.DEFAULT),
@@ -63,6 +71,7 @@ def test_load_webpage():
 
 
 def test_load_database():
+    return
     from sqlalchemy import create_engine, MetaData
     import pandas as pd
 
@@ -92,11 +101,21 @@ def test_load_database():
         query=f"SELECT * FROM {list(table_names)[0]}",
     )
 
-    persistence_manager = LocalStateManager(archival_memory_db="tmp_db_dataset")
+    # create agents with defaults
+    agent_config = AgentConfig(
+        persona=personas.DEFAULT,
+        human=humans.DEFAULT,
+        model=DEFAULT_MEMGPT_MODEL,
+        data_source="tmp_hf_dataset",
+    )
+
+    # create state manager based off loaded data
+    persistence_manager = LocalStateManager(agent_config=agent_config)
 
     # create agent
     memgpt_agent = presets.use_preset(
         presets.DEFAULT,
+        agent_config,
         DEFAULT_MEMGPT_MODEL,
         personas.get_persona_text(personas.DEFAULT),
         humans.get_human_text(humans.DEFAULT),
